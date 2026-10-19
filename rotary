@@ -1,72 +1,102 @@
-
+# Rotary encoder adjusts LED brightness.
+# PIR detection overrides the encoder and turns LED off.
 import RPi.GPIO as GPIO
-from time import sleep
+from time import sleep, monotonic
 
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 
+# BCM numbering. CLK/DT/SW are from the original professor's file.
 CLK = 17
 DT = 27
 SW = 22
+# Verify these two against YOUR wiring; they were not in the original file.
 PIR = 20
 LED = 18
+
+PIR_ACTIVE_LEVEL = GPIO.HIGH   # Set GPIO.LOW if your sensor is active-low
+LED_ACTIVE_LOW = False        # Set True if LED is wired from 3.3V to GPIO
+DIRECTION = 1                 # Change to -1 if clockwise dims the LED
 
 GPIO.setup(CLK, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(DT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(SW, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(PIR, GPIO.IN)
+GPIO.setup(PIR, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(LED, GPIO.OUT)
 
-# Set up PWM for LED brightness
-led_pwm = GPIO.PWM(LED, 100)
-led_pwm.start(0)
+# 1000 Hz produces less visible flicker than 100 Hz.
+led_pwm = GPIO.PWM(LED, 1000)
+led_pwm.start(100 if LED_ACTIVE_LOW else 0)
 
-clk_prev = GPIO.input(CLK)
+# Valid transitions for quadrature signals (CLK, DT).
+# The sequence must complete in order, so contact bounce cancels out.
+transition = (0, 1, -1, 0,
+              -1, 0, 0, 1,
+              1, 0, 0, -1,
+              0, -1, 1, 0)
+
+state_prev = (GPIO.input(CLK) << 1) | GPIO.input(DT)
 sw_prev = GPIO.input(SW)
+quarter_steps = 0
 encode_count = 0
+
+# Only accept PIR changes that stay stable for at least 50 milliseconds.
+pir_candidate = (GPIO.input(PIR) == PIR_ACTIVE_LEVEL)
+pir_active = pir_candidate
+pir_changed_at = monotonic()
+last_brightness = None
+print('PIR at startup:', 'DETECTED' if pir_active else 'clear')
+print('Encoder count = 0, LED = 0%')
 
 try:
     while True:
-        clk_status = GPIO.input(CLK)
-        dt_status = GPIO.input(DT)
+        state = (GPIO.input(CLK) << 1) | GPIO.input(DT)
         sw_status = GPIO.input(SW)
-        motion = GPIO.input(PIR)
+        raw_pir = (GPIO.input(PIR) == PIR_ACTIVE_LEVEL)
 
-        # Rotary encoder controls brightness
-        if clk_prev == 1 and clk_status == 0:
-            if clk_status == dt_status:
-                encode_count += 1
+        # Count one full rotary cycle, in either direction.
+        if state != state_prev:
+            delta = transition[(state_prev << 2) | state]
+            if delta == 0:
+                quarter_steps = 0   # invalid transition
             else:
-                encode_count -= 1
+                quarter_steps += delta
+            state_prev = state
 
-            # Limit count between 0 and 20
-            encode_count = max(0, min(20, encode_count))
-            print("Encoder count =", encode_count)
+            # Most KY-040 encoders rest at CLK=1, DT=1 between clicks.
+            if state == 3:
+                if abs(quarter_steps) >= 4:
+                    change = DIRECTION if quarter_steps > 0 else -DIRECTION
+                    encode_count = max(0, min(10, encode_count + change))
+                    print('Encoder count =', encode_count)
+                quarter_steps = 0
 
-        clk_prev = clk_status
-
-        # Reset encoder count when button pressed
-        if sw_prev == 1 and sw_status == 0:
+        # Push-button resets brightness; triggers only on press.
+        if sw_prev == GPIO.HIGH and sw_status == GPIO.LOW:
             encode_count = 0
-            print("Encoder reset to 0")
-
+            print('Button pressed: encoder reset to 0')
         sw_prev = sw_status
 
-        # Each pulse increases brightness by 5%
-        brightness = encode_count * 5
+        # Debounce the PIR output so noise doesn't make the LED flash.
+        now = monotonic()
+        if raw_pir != pir_candidate:
+            pir_candidate = raw_pir
+            pir_changed_at = now
+        if pir_candidate != pir_active and now - pir_changed_at >= 0.05:
+            pir_active = pir_candidate
+            print('PIR:', 'DETECTED -> LED OFF' if pir_active else 'clear')
 
-        # PIR detects motion: LED turns OFF
-        if motion == 1:
-            brightness = 0
+        brightness = 0 if pir_active else encode_count * 10
+        duty_cycle = (100 - brightness) if LED_ACTIVE_LOW else brightness
+        if duty_cycle != last_brightness:
+            led_pwm.ChangeDutyCycle(duty_cycle)
+            print('LED brightness =', brightness, '%')
+            last_brightness = duty_cycle
 
-        # Update LED brightness
-        led_pwm.ChangeDutyCycle(brightness)
-
-        sleep(0.001)
+        sleep(0.0005)
 
 except KeyboardInterrupt:
-    print("Program stopped")
-
+    print('Program stopped')
 finally:
     led_pwm.stop()
     GPIO.cleanup()
