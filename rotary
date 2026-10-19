@@ -5,65 +5,68 @@ from time import sleep
 GPIO.setwarnings(False)
 GPIO.setmode(GPIO.BCM)
 
-# Set GPIO pins
 CLK = 17
 DT = 27
+SW = 22
 PIR = 20
 LED = 18
 
-# Set up inputs and output
 GPIO.setup(CLK, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(DT, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(SW, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(PIR, GPIO.IN)
 GPIO.setup(LED, GPIO.OUT)
 
-# Set PWM frequency to 100 Hz
-pwm = GPIO.PWM(LED, 100)
-pwm.start(0)
+# Set up PWM for LED brightness
+led_pwm = GPIO.PWM(LED, 100)
+led_pwm.start(0)
 
-count = 0
-old_clk = GPIO.input(CLK)
-old_motion = GPIO.input(PIR)
+clk_prev = GPIO.input(CLK)
+sw_prev = GPIO.input(SW)
+encode_count = 0
 
-while True:
+try:
+    while True:
+        clk_status = GPIO.input(CLK)
+        dt_status = GPIO.input(DT)
+        sw_status = GPIO.input(SW)
+        motion = GPIO.input(PIR)
 
-    clk = GPIO.input(CLK)
-    motion = GPIO.input(PIR)
+        # Rotary encoder controls brightness
+        if clk_prev == 1 and clk_status == 0:
+            if clk_status == dt_status:
+                encode_count += 1
+            else:
+                encode_count -= 1
 
-    # Check rotary encoder
-    if old_clk == 1 and clk == 0:
+            # Limit count between 0 and 20
+            encode_count = max(0, min(20, encode_count))
+            print("Encoder count =", encode_count)
 
-        if GPIO.input(DT) == 1:
-            count = count + 1
-        else:
-            count = count - 1
+        clk_prev = clk_status
 
-        # Limit count from 0 to 10
-        if count < 0:
-            count = 0
+        # Reset encoder count when button pressed
+        if sw_prev == 1 and sw_status == 0:
+            encode_count = 0
+            print("Encoder reset to 0")
 
-        if count > 10:
-            count = 10
+        sw_prev = sw_status
 
-        print("Encoder Count:", count)
-        sleep(0.01)
+        # Each pulse increases brightness by 5%
+        brightness = encode_count * 5
 
-    old_clk = clk
+        # PIR detects motion: LED turns OFF
+        if motion == 1:
+            brightness = 0
 
-    # Check PIR sensor
-    if motion == 1:
-        pwm.ChangeDutyCycle(0)
+        # Update LED brightness
+        led_pwm.ChangeDutyCycle(brightness)
 
-        if old_motion == 0:
-            print("Motion Detected - LED OFF")
+        sleep(0.001)
 
-    else:
-        duty = count * 10
-        pwm.ChangeDutyCycle(duty)
+except KeyboardInterrupt:
+    print("Program stopped")
 
-        if old_motion == 1:
-            print("No Motion - LED ON")
-
-    old_motion = motion
-
-    sleep(0.001)
+finally:
+    led_pwm.stop()
+    GPIO.cleanup()
