@@ -1,0 +1,24 @@
+
+import RPi.GPIO as GPIO
+from time import sleep
+
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
+PIR = 20
+LED = 18
+
+GPIO.setup(PIR, GPIO.IN)
+GPIO.setup(LED, GPIO.OUT)
+
+while True:
+    motion = GPIO.input(PIR)
+
+    if motion == 1:
+        GPIO.output(LED, GPIO.HIGH)
+        print("Motion Detected - LED ON")
+    else:
+        GPIO.output(LED, GPIO.LOW)
+        print("No Motion - LED OFF")
+
+    sleep(0.5)
