@@ -1,0 +1,49 @@
+
+import RPi.GPIO as GPIO
+from time import sleep, time
+
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
+TRIG = 23
+ECHO = 24
+
+GPIO.setup(TRIG, GPIO.OUT)
+GPIO.setup(ECHO, GPIO.IN)
+
+GPIO.output(TRIG, 0)
+sleep(1)
+
+while True:
+    # Send ultrasonic pulse
+    GPIO.output(TRIG, 1)
+    sleep(0.00001)
+    GPIO.output(TRIG, 0)
+
+    # Wait for echo to start
+    wait = time()
+
+    while GPIO.input(ECHO) == 0:
+        if time() - wait > 0.04:
+            break
+
+    if GPIO.input(ECHO) == 0:
+        print("No echo received")
+
+    else:
+        start = time()
+
+        # Wait for echo to end
+        while GPIO.input(ECHO) == 1:
+            if time() - start > 0.04:
+                break
+
+        if GPIO.input(ECHO) == 1:
+            print("Echo stuck HIGH")
+
+        else:
+            stop = time()
+            distance = (stop - start) * 17150
+            print("Distance:", round(distance, 2), "cm")
+
+    sleep(0.5)
