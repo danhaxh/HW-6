@@ -1,0 +1,75 @@
+# Assignment 6 - Exercise 2
+# Ultrasonic sensor, PIR sensor, and LED
+
+import RPi.GPIO as GPIO
+from time import sleep, time
+
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
+TRIG = 23
+ECHO = 24
+PIR = 20
+LED = 18
+
+GPIO.setup(TRIG, GPIO.OUT)
+GPIO.setup(ECHO, GPIO.IN)
+GPIO.setup(PIR, GPIO.IN)
+GPIO.setup(LED, GPIO.OUT)
+
+GPIO.output(TRIG, 0)
+
+pi_pwm = GPIO.PWM(LED, 100)
+pi_pwm.start(0)
+
+# IMPORTANT: HC-SR04 ECHO is 5V. Use a voltage divider to protect the Pi.
+# Allow the PIR sensor time to warm up after power is connected.
+
+while True:
+    # Send a short pulse to the ultrasonic sensor
+    GPIO.output(TRIG, 0)
+    sleep(0.000002)
+    GPIO.output(TRIG, 1)
+    sleep(0.00001)
+    GPIO.output(TRIG, 0)
+
+    # Wait for ECHO to become HIGH
+    valid = 1
+    wait_start = time()
+    while GPIO.input(ECHO) == 0:
+        if time() - wait_start > 0.04:
+            valid = 0
+            break
+
+    # Measure how long ECHO stays HIGH
+    if valid == 1:
+        start = time()
+        while GPIO.input(ECHO) == 1:
+            if time() - start > 0.04:
+                valid = 0
+                break
+        stop = time()
+
+    if valid == 0:
+        duty = 0
+        print('No distance reading - LED OFF')
+    else:
+        distance = (stop - start) * 17150
+        motion = GPIO.input(PIR)
+
+        if motion == 1:
+            duty = 0
+            print('Motion detected - LED OFF')
+        elif distance >= 100:
+            duty = 100
+        elif distance <= 5:
+            duty = 0
+        else:
+            duty = (distance - 5) * 100 / 95
+
+        if motion == 0:
+            print('Distance:', round(distance, 1), 'cm')
+            print('Duty cycle:', round(duty), '%')
+
+    pi_pwm.ChangeDutyCycle(duty)
+    sleep(0.2)
