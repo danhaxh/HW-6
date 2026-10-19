@@ -1,0 +1,24 @@
+
+import RPi.GPIO as GPIO
+from time import sleep
+
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
+PIR = 20
+LED = 18
+
+GPIO.setup(PIR, GPIO.IN)
+GPIO.setup(LED, GPIO.OUT)
+
+while True:
+    motion = GPIO.input(PIR)
+
+    print("PIR Value:", motion)
+
+    if motion == 1:
+        GPIO.output(LED, GPIO.HIGH)
+    else:
+        GPIO.output(LED, GPIO.LOW)
+
+    sleep(1)
