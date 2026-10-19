@@ -67,8 +67,7 @@ while True:
         else:
             duty = (distance - 5) * 100 / 95
 
-        if motion == 0:
-            print('Distance:', round(distance, 1), 'cm')
+      print('Distance:', round(distance, 1), 'cm')
             print('Duty cycle:', round(duty), '%')
 
     pi_pwm.ChangeDutyCycle(duty)
